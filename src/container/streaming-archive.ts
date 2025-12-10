@@ -754,38 +754,17 @@ export class StreamingArchive {
       (f) => f.chunks.length > 1
     ).length;
 
-    const fileBlockMap = new Map<string, Set<number>>();
-
+    const allNeededBlocks = new Set<number>();
     for (const fileEntry of reassembledFiles) {
-      const blocks = new Set<number>();
       for (const chunk of fileEntry.chunks) {
         if (chunk.size === 0) continue;
-        if (chunk.offset < 0) {
-          console.error(
-            `Warning: Negative offset for ${fileEntry.original}: offset=${chunk.offset}`
-          );
-          continue;
-        }
         const startBlock = Math.floor(chunk.offset / this.blockSize);
-        const endOffset = chunk.offset + chunk.size;
         const endBlock = Math.floor(
-          Math.max(0, endOffset - 1) / this.blockSize
+          (chunk.offset + chunk.size - 1) / this.blockSize
         );
-        for (
-          let b = startBlock;
-          b <= Math.min(endBlock, this.blockInfos.length - 1);
-          b++
-        ) {
-          blocks.add(b);
+        for (let b = startBlock; b <= endBlock; b++) {
+          allNeededBlocks.add(b);
         }
-      }
-      fileBlockMap.set(fileEntry.original, blocks);
-    }
-
-    const allNeededBlocks = new Set<number>();
-    for (const blocks of fileBlockMap.values()) {
-      for (const b of blocks) {
-        allNeededBlocks.add(b);
       }
     }
 
@@ -833,89 +812,42 @@ export class StreamingArchive {
     }) => {
       try {
         const totalSize = fileEntry.chunks.reduce((sum, c) => sum + c.size, 0);
-
-        if (totalSize === 0) {
-          const filePath = join(outputDir, fileEntry.original);
-          const dirPath = dirname(filePath);
-          await mkdir(dirPath, { recursive: true });
-          await writeFileBuffer(filePath, new Uint8Array(0));
-          extracted++;
-          return;
-        }
-
         const fileData = new Uint8Array(totalSize);
         let writeOffset = 0;
 
         for (const chunk of fileEntry.chunks) {
-          if (chunk.size === 0) {
-            continue;
-          }
+          if (chunk.size === 0) continue;
 
           const startBlock = Math.floor(chunk.offset / this.blockSize);
-          const endOffset = chunk.offset + chunk.size;
           const endBlock = Math.floor(
-            Math.max(0, endOffset - 1) / this.blockSize
+            (chunk.offset + chunk.size - 1) / this.blockSize
           );
+          let bytesWritten = 0;
 
-          let chunkBytesWritten = 0;
-          for (
-            let b = startBlock;
-            b <= endBlock && chunkBytesWritten < chunk.size;
-            b++
-          ) {
+          for (let b = startBlock; b <= endBlock; b++) {
             const blockData = blockDataMap.get(b);
-            if (!blockData) {
-              throw new Error(
-                `Block ${b} not found for file ${fileEntry.original}`
-              );
-            }
-
-            const blockStartOffset = b * this.blockSize;
-            const blockEndOffset = blockStartOffset + blockData.length;
-
-            const chunkStartInStream = chunk.offset + chunkBytesWritten;
-            const chunkEndInStream = chunk.offset + chunk.size;
-
-            if (
-              chunkStartInStream >= blockEndOffset ||
-              chunkEndInStream <= blockStartOffset
-            ) {
-              continue;
-            }
-
-            const readStart = Math.max(
-              0,
-              chunkStartInStream - blockStartOffset
-            );
+            if (!blockData) continue;
+            const blockStart = b * this.blockSize;
+            const readStart = Math.max(0, chunk.offset - blockStart);
             const readEnd = Math.min(
               blockData.length,
-              chunkEndInStream - blockStartOffset
+              chunk.offset + chunk.size - blockStart
             );
-
-            if (readEnd <= readStart) {
-              continue;
+            if (readEnd > readStart && readStart < blockData.length) {
+              const toCopy = readEnd - readStart;
+              const destPos = writeOffset + bytesWritten;
+              if (destPos + toCopy <= fileData.length) {
+                fileData.set(blockData.subarray(readStart, readEnd), destPos);
+              }
+              bytesWritten += toCopy;
             }
-
-            const bytesToCopy = readEnd - readStart;
-            const destOffset = writeOffset + chunkBytesWritten;
-
-            if (destOffset + bytesToCopy > fileData.length) {
-              throw new Error(
-                `Write overflow: destOffset=${destOffset}, bytesToCopy=${bytesToCopy}, fileData.length=${fileData.length}`
-              );
-            }
-
-            fileData.set(blockData.subarray(readStart, readEnd), destOffset);
-            chunkBytesWritten += bytesToCopy;
           }
           writeOffset += chunk.size;
         }
 
         const filePath = join(outputDir, fileEntry.original);
-        const dirPath = dirname(filePath);
-        await mkdir(dirPath, { recursive: true });
+        await mkdir(dirname(filePath), { recursive: true });
         await writeFileBuffer(filePath, fileData);
-
         extracted++;
       } catch (error) {
         failed++;
