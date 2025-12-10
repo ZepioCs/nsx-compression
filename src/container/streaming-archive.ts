@@ -14,7 +14,7 @@ import { join, dirname } from "path";
 const STREAMING_SOLID_FLAG = 0x07;
 const DEFAULT_BLOCK_SIZE = 32 * 1024 * 1024;
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
-const LARGE_FILE_CHUNK_SIZE = 64 * 1024 * 1024;
+const LARGE_FILE_CHUNK_SIZE = 32 * 1024 * 1024;
 const CHUNK_MARKER = ".__chunk__.";
 
 interface FileInfo {
@@ -241,12 +241,24 @@ export class StreamingArchive {
         timestamp: result.timestamp,
       });
 
-      currentBlockData.push(result.data);
-      currentBlockSize += result.data.length;
-      currentBlockOffset += result.data.length;
+      let dataOffset = 0;
+      let remaining = result.data.length;
 
-      if (currentBlockSize >= this.blockSize) {
-        flushBlock();
+      while (remaining > 0) {
+        const spaceInBlock = this.blockSize - currentBlockSize;
+        const toAdd = Math.min(remaining, spaceInBlock);
+
+        currentBlockData.push(
+          result.data.subarray(dataOffset, dataOffset + toAdd)
+        );
+        currentBlockSize += toAdd;
+        currentBlockOffset += toAdd;
+        dataOffset += toAdd;
+        remaining -= toAdd;
+
+        if (currentBlockSize >= this.blockSize) {
+          flushBlock();
+        }
       }
     };
 
