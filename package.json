@@ -5,12 +5,12 @@
   "private": true,
   "scripts": {
     "start": "bun run index.ts",
-    "build": "bun build --compile index.ts --outfile cmp.exe",
-    "build:windows": "bun build --compile --target=bun-windows-x64 index.ts --outfile cmp.exe",
-    "build:linux": "bun build --compile --target=bun-linux-x64 index.ts --outfile cmp-linux",
-    "build:linux-arm": "bun build --compile --target=bun-linux-arm64 index.ts --outfile cmp-linux-arm64",
-    "build:macos": "bun build --compile --target=bun-darwin-x64 index.ts --outfile cmp-macos",
-    "build:macos-arm": "bun build --compile --target=bun-darwin-arm64 index.ts --outfile cmp-macos-arm64",
+    "build": "bun build --compile index.ts --outfile nsx.exe",
+    "build:windows": "bun build --compile --target=bun-windows-x64 index.ts --outfile nsx.exe",
+    "build:linux": "bun build --compile --target=bun-linux-x64 index.ts --outfile nsx-linux",
+    "build:linux-arm": "bun build --compile --target=bun-linux-arm64 index.ts --outfile nsx-linux-arm64",
+    "build:macos": "bun build --compile --target=bun-darwin-x64 index.ts --outfile nsx-macos",
+    "build:macos-arm": "bun build --compile --target=bun-darwin-arm64 index.ts --outfile nsx-macos-arm64",
     "build:all": "bun run build:windows && bun run build:linux && bun run build:linux-arm && bun run build:macos && bun run build:macos-arm"
   },
   "dependencies": {},

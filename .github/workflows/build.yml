@@ -13,19 +13,19 @@ jobs:
         include:
           - os: windows-latest
             target: bun-windows-x64
-            output: cmp-windows-x64.exe
+            output: nsx-windows-x64.exe
           - os: ubuntu-latest
             target: bun-linux-x64
-            output: cmp-linux-x64
+            output: nsx-linux-x64
           - os: ubuntu-24.04-arm
             target: bun-linux-arm64
-            output: cmp-linux-arm64
+            output: nsx-linux-arm64
           - os: macos-latest
             target: bun-darwin-arm64
-            output: cmp-macos-arm64
+            output: nsx-macos-arm64
           - os: macos-13
             target: bun-darwin-x64
-            output: cmp-macos-x64
+            output: nsx-macos-x64
 
     runs-on: ${{ matrix.os }}
 

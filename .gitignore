@@ -6,8 +6,8 @@ out
 dist
 *.tgz
 *.exe
-cmp-linux*
-cmp-macos*
+nsx-linux*
+nsx-macos*
 
 # code coverage
 coverage
@@ -35,4 +35,4 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Finder (MacOS) folder config
 .DS_Store
-cmp.exe
+nsx.exe

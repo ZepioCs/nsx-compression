@@ -1,8 +1,5 @@
 import { CliParser } from "./src/cli/parser";
 import { Commands } from "./src/cli/commands";
-import { BenchmarkRunner } from "./src/benchmark/runner";
-import { FormatComparator } from "./src/benchmark/comparator";
-import { BenchmarkReporter } from "./src/benchmark/reporter";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -23,29 +20,7 @@ async function main() {
     } else if (options.command === "list") {
       await commands.list(options);
     } else if (options.command === "benchmark") {
-      const runner = new BenchmarkRunner();
-      const comparator = new FormatComparator();
-
-      for (const filePath of options.input) {
-        console.log(`\nBenchmarking: ${filePath}\n`);
-
-        const algorithmResults = await runner.benchmarkAllAlgorithms(filePath);
-        const formatComparisons = await comparator.compareAll(filePath);
-
-        console.log(
-          BenchmarkReporter.formatResults(algorithmResults, formatComparisons)
-        );
-
-        const bestResult = algorithmResults[0];
-        if (bestResult) {
-          console.log(
-            BenchmarkReporter.generateComparisonTable(
-              bestResult,
-              formatComparisons
-            )
-          );
-        }
-      }
+      await commands.benchmark(options);
     }
   } catch (error) {
     console.error(

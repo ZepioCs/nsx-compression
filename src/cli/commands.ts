@@ -49,11 +49,11 @@ export class Commands {
         ? firstInput + "archive"
         : firstInput);
 
-    if (!outputPath.toLowerCase().endsWith(".cmp")) {
+    if (!outputPath.toLowerCase().endsWith(".nsx")) {
       if (outputPath.endsWith("/") || outputPath.endsWith("\\")) {
-        outputPath = outputPath + "archive.cmp";
+        outputPath = outputPath + "archive.nsx";
       } else {
-        outputPath = outputPath + ".cmp";
+        outputPath = outputPath + ".nsx";
       }
     }
 
@@ -638,7 +638,7 @@ export class Commands {
     const archiveStats = await stat(archivePath);
     if (archiveStats.isDirectory()) {
       throw new Error(
-        `Input must be an archive file (.cmp), not a directory: ${archivePath}\nDid you mean to compress instead? Use: compress ${archivePath} -o ${archivePath}.cmp`
+        `Input must be an archive file (.nsx), not a directory: ${archivePath}\nDid you mean to compress instead? Use: compress ${archivePath} -o ${archivePath}.nsx`
       );
     }
 
@@ -646,9 +646,9 @@ export class Commands {
       throw new Error(`Input is not a regular file: ${archivePath}`);
     }
 
-    if (!archivePath.toLowerCase().endsWith(".cmp")) {
+    if (!archivePath.toLowerCase().endsWith(".nsx")) {
       console.warn(
-        `Warning: Input file does not have .cmp extension: ${archivePath}`
+        `Warning: Input file does not have .nsx extension: ${archivePath}`
       );
     }
 
@@ -1354,8 +1354,384 @@ export class Commands {
   }
 
   async benchmark(options: CliOptions): Promise<void> {
-    console.log("Benchmarking is implemented in the benchmark module.");
-    console.log("Use the benchmark command from the benchmark runner.");
+    if (options.input.length === 0) {
+      console.log("No input files specified. Using src/ folder for benchmark.");
+      options.input = ["src"];
+    }
+
+    console.log("═".repeat(70));
+    console.log("  NSX COMPRESSION BENCHMARK");
+    console.log("═".repeat(70));
+
+    const filesToProcess: { path: string; fullPath: string }[] = [];
+    let totalOriginalSize = 0;
+
+    for (const rawInputPath of options.input) {
+      const inputPath = this.normalizePath(rawInputPath);
+
+      if (!(await fileExists(inputPath))) {
+        console.warn(`Warning: File or directory not found: ${inputPath}`);
+        continue;
+      }
+
+      const stats = await stat(inputPath);
+      if (stats.isDirectory()) {
+        const files = await this.getAllFiles(inputPath);
+        for (const file of files) {
+          const fileStats = await stat(file);
+          totalOriginalSize += fileStats.size;
+          const relativePath = relative(inputPath, file);
+          filesToProcess.push({
+            path: relativePath.replace(/\\/g, "/"),
+            fullPath: file,
+          });
+        }
+      } else {
+        totalOriginalSize += stats.size;
+        filesToProcess.push({
+          path: basename(inputPath),
+          fullPath: inputPath,
+        });
+      }
+    }
+
+    if (filesToProcess.length === 0) {
+      console.log("No files to benchmark.");
+      return;
+    }
+
+    console.log(`\nInput: ${options.input.join(", ")}`);
+    console.log(`Files: ${filesToProcess.length}`);
+    console.log(`Total size: ${this.formatBytes(totalOriginalSize)}\n`);
+
+    const results: {
+      name: string;
+      size: number;
+      ratio: number;
+      compressTime: number;
+      decompressTime: number;
+      error?: string;
+    }[] = [];
+
+    const tempDir = join(process.cwd(), ".benchmark_temp");
+    await mkdir(tempDir, { recursive: true });
+
+    console.log("Testing NSX algorithms...\n");
+
+    const algorithms = ["brotli", "gzip", "store"];
+    const levels = [1, 6, 9, 11];
+
+    for (const algo of algorithms) {
+      for (const level of levels) {
+        if (algo === "store" && level !== 1) continue;
+        if (algo === "gzip" && level > 9) continue;
+
+        const testName = algo === "store" ? "store" : `${algo}-${level}`;
+        const outputPath = join(tempDir, `test_${testName}.nsx`);
+        const extractPath = join(tempDir, `extract_${testName}`);
+
+        process.stdout.write(`  Testing ${testName.padEnd(12)}...`);
+
+        try {
+          const streamingArchive = new StreamingArchive();
+          const algorithm = this.selector.getAlgorithm(algo)!;
+          algorithm.setCompressionLevel(level);
+
+          const compressStart = Date.now();
+          await streamingArchive.write(
+            outputPath,
+            filesToProcess.map((f) => ({
+              path: f.path,
+              fullPath: f.fullPath,
+            })),
+            algorithm,
+            () => {}
+          );
+          const compressTime = Date.now() - compressStart;
+
+          const archiveStats = await stat(outputPath);
+          const compressedSize = archiveStats.size;
+
+          const decompressStart = Date.now();
+          const readArchive = new StreamingArchive();
+          await readArchive.read(outputPath);
+          await readArchive.streamingExtract(extractPath, algorithm, () => {});
+          const decompressTime = Date.now() - decompressStart;
+
+          const ratio = (1 - compressedSize / totalOriginalSize) * 100;
+
+          results.push({
+            name: `NSX (${testName})`,
+            size: compressedSize,
+            ratio,
+            compressTime,
+            decompressTime,
+          });
+
+          console.log(
+            ` ${this.formatBytes(compressedSize).padStart(10)} (${ratio.toFixed(
+              1
+            )}%) ${(compressTime / 1000).toFixed(2)}s`
+          );
+        } catch (error) {
+          results.push({
+            name: `NSX (${testName})`,
+            size: 0,
+            ratio: 0,
+            compressTime: 0,
+            decompressTime: 0,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          console.log(` FAILED`);
+        }
+      }
+    }
+
+    console.log("\nTesting external formats...\n");
+
+    const zipPath = join(tempDir, "test.zip");
+    process.stdout.write(`  Testing ZIP...`.padEnd(30));
+    try {
+      const zipStart = Date.now();
+      const inputForZip = options.input
+        .map((p) => `"${this.normalizePath(p)}"`)
+        .join(",");
+
+      if (process.platform === "win32") {
+        await new Promise<void>((resolve, reject) => {
+          const { exec } = require("child_process");
+          exec(
+            `powershell -Command "Compress-Archive -Path ${inputForZip} -DestinationPath '${zipPath}' -Force"`,
+            (error: Error | null) => {
+              if (error) reject(error);
+              else resolve();
+            }
+          );
+        });
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          const { exec } = require("child_process");
+          exec(
+            `zip -r "${zipPath}" ${options.input
+              .map((p) => `"${this.normalizePath(p)}"`)
+              .join(" ")}`,
+            (error: Error | null) => {
+              if (error) reject(error);
+              else resolve();
+            }
+          );
+        });
+      }
+      const zipTime = Date.now() - zipStart;
+
+      const zipStats = await stat(zipPath);
+      const zipRatio = (1 - zipStats.size / totalOriginalSize) * 100;
+
+      results.push({
+        name: "ZIP",
+        size: zipStats.size,
+        ratio: zipRatio,
+        compressTime: zipTime,
+        decompressTime: 0,
+      });
+
+      console.log(
+        ` ${this.formatBytes(zipStats.size).padStart(10)} (${zipRatio.toFixed(
+          1
+        )}%) ${(zipTime / 1000).toFixed(2)}s`
+      );
+    } catch (error) {
+      results.push({
+        name: "ZIP",
+        size: 0,
+        ratio: 0,
+        compressTime: 0,
+        decompressTime: 0,
+        error: "Not available",
+      });
+      console.log(` Not available`);
+    }
+
+    const sevenZipPath = join(tempDir, "test.7z");
+    process.stdout.write(`  Testing 7z...`.padEnd(30));
+    try {
+      const sevenZipStart = Date.now();
+      await new Promise<void>((resolve, reject) => {
+        const { exec } = require("child_process");
+        const inputFor7z = options.input
+          .map((p) => `"${this.normalizePath(p)}"`)
+          .join(" ");
+        exec(
+          `7z a -mx=9 "${sevenZipPath}" ${inputFor7z}`,
+          (error: Error | null) => {
+            if (error) reject(error);
+            else resolve();
+          }
+        );
+      });
+      const sevenZipTime = Date.now() - sevenZipStart;
+
+      const sevenZipStats = await stat(sevenZipPath);
+      const sevenZipRatio = (1 - sevenZipStats.size / totalOriginalSize) * 100;
+
+      results.push({
+        name: "7z (LZMA2)",
+        size: sevenZipStats.size,
+        ratio: sevenZipRatio,
+        compressTime: sevenZipTime,
+        decompressTime: 0,
+      });
+
+      console.log(
+        ` ${this.formatBytes(sevenZipStats.size).padStart(
+          10
+        )} (${sevenZipRatio.toFixed(1)}%) ${(sevenZipTime / 1000).toFixed(2)}s`
+      );
+    } catch {
+      results.push({
+        name: "7z (LZMA2)",
+        size: 0,
+        ratio: 0,
+        compressTime: 0,
+        decompressTime: 0,
+        error: "Not available (install 7-Zip and add to PATH)",
+      });
+      console.log(` Not available`);
+    }
+
+    await new Promise<void>((resolve) => {
+      const { exec } = require("child_process");
+      if (process.platform === "win32") {
+        exec(`rmdir /s /q "${tempDir}"`, () => resolve());
+      } else {
+        exec(`rm -rf "${tempDir}"`, () => resolve());
+      }
+    });
+
+    console.log("\n" + "═".repeat(80));
+    console.log("  RESULTS SUMMARY (sorted by compression ratio)");
+    console.log("═".repeat(80));
+
+    const validResults = results
+      .filter((r) => !r.error)
+      .sort((a, b) => a.size - b.size);
+
+    const speedMBps = (size: number, timeMs: number) =>
+      timeMs > 0 ? (size / 1024 / 1024 / (timeMs / 1000)).toFixed(1) : "∞";
+
+    console.log(
+      "\n" +
+        "Format".padEnd(20) +
+        "Size".padStart(12) +
+        "Ratio".padStart(10) +
+        "Time".padStart(10) +
+        "Speed".padStart(12)
+    );
+    console.log("─".repeat(64));
+
+    for (const result of validResults) {
+      const speed = speedMBps(totalOriginalSize, result.compressTime);
+      console.log(
+        result.name.padEnd(20) +
+          this.formatBytes(result.size).padStart(12) +
+          `${result.ratio.toFixed(1)}%`.padStart(10) +
+          `${(result.compressTime / 1000).toFixed(2)}s`.padStart(10) +
+          `${speed} MB/s`.padStart(12)
+      );
+    }
+
+    if (validResults.length > 0) {
+      const bestRatio = validResults[0]!;
+      const fastestNsx = validResults
+        .filter((r) => r.name.startsWith("NSX") && r.ratio > 0)
+        .sort((a, b) => a.compressTime - b.compressTime)[0];
+      const zip = validResults.find((r) => r.name === "ZIP");
+      const sevenZ = validResults.find((r) => r.name === "7z (LZMA2)");
+
+      console.log("\n" + "─".repeat(64));
+      console.log("\nCOMPARISON:");
+
+      console.log(`\nBest Compression: ${bestRatio.name}`);
+      console.log(
+        `   Ratio: ${bestRatio.ratio.toFixed(1)}% | Time: ${(
+          bestRatio.compressTime / 1000
+        ).toFixed(2)}s`
+      );
+
+      if (fastestNsx && fastestNsx.name !== bestRatio.name) {
+        console.log(`\nFastest NSX: ${fastestNsx.name}`);
+        console.log(
+          `   Ratio: ${fastestNsx.ratio.toFixed(1)}% | Time: ${(
+            fastestNsx.compressTime / 1000
+          ).toFixed(2)}s`
+        );
+      }
+
+      if (zip && !zip.error) {
+        const ratioVsZip = bestRatio.ratio - zip.ratio;
+        const timeVsZip =
+          zip.compressTime / Math.max(bestRatio.compressTime, 1);
+        const fastestTimeVsZip = fastestNsx
+          ? zip.compressTime / Math.max(fastestNsx.compressTime, 1)
+          : 0;
+
+        console.log(`\nvs ZIP:`);
+        console.log(
+          `   Compression: ${ratioVsZip > 0 ? "+" : ""}${ratioVsZip.toFixed(
+            1
+          )}% ${ratioVsZip > 0 ? "better" : "worse"}`
+        );
+        console.log(
+          `   Speed: ${timeVsZip.toFixed(1)}x ${
+            timeVsZip > 1 ? "faster" : "slower"
+          } (best compression)`
+        );
+        if (fastestNsx && fastestTimeVsZip > 0) {
+          console.log(
+            `   Speed: ${fastestTimeVsZip.toFixed(1)}x ${
+              fastestTimeVsZip > 1 ? "faster" : "slower"
+            } (fastest NSX)`
+          );
+        }
+      }
+
+      if (sevenZ && !sevenZ.error) {
+        const ratioVs7z = bestRatio.ratio - sevenZ.ratio;
+        const timeVs7z =
+          sevenZ.compressTime / Math.max(bestRatio.compressTime, 1);
+
+        console.log(`\nvs 7z:`);
+        console.log(
+          `   Compression: ${ratioVs7z > 0 ? "+" : ""}${ratioVs7z.toFixed(
+            1
+          )}% ${ratioVs7z > 0 ? "better" : "worse"}`
+        );
+        console.log(
+          `   Speed: ${timeVs7z.toFixed(1)}x ${
+            timeVs7z > 1 ? "faster" : "slower"
+          }`
+        );
+      }
+
+      const recommended = validResults.find(
+        (r) => r.name.startsWith("NSX") && r.name.includes("brotli-6")
+      );
+      if (recommended) {
+        console.log(
+          `\nRecommended: ${recommended.name} (balanced speed & compression)`
+        );
+        console.log(
+          `   Ratio: ${recommended.ratio.toFixed(1)}% | Time: ${(
+            recommended.compressTime / 1000
+          ).toFixed(2)}s | Speed: ${speedMBps(
+            totalOriginalSize,
+            recommended.compressTime
+          )} MB/s`
+        );
+      }
+    }
+
+    console.log("\n" + "═".repeat(80) + "\n");
   }
 
   private async getTotalSize(paths: string[]): Promise<number> {

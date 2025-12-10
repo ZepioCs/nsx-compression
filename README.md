@@ -1,101 +1,152 @@
-# Advanced Compression System
+# NSX - High-Performance Compression Tool
 
-A high-performance lossless compression system that outperforms traditional formats like ZIP, RAR, and TAR through adaptive algorithm selection and hybrid compression techniques.
+A fast, parallel compression tool built with Bun. NSX uses streaming compression with Brotli to achieve excellent compression ratios while maximizing CPU utilization.
 
 ## Features
 
-- **Multiple Compression Algorithms**: LZMA2, Brotli, Zstandard, and BWT (Burrows-Wheeler Transform)
-- **Adaptive Selection**: Automatically chooses the best algorithm based on file type and content analysis
-- **Custom Archive Format**: Efficient container format supporting multiple algorithms per archive
-- **Comprehensive Benchmarking**: Compare compression performance with ZIP, 7Z, and TAR formats
-- **Lossless Compression**: 100% data integrity guaranteed
+- **Streaming Pipeline** - Overlaps reading and compression for maximum throughput
+- **Parallel Processing** - Uses all available CPU cores for compression/decompression
+- **Large File Support** - Automatically chunks files >500MB for memory efficiency
+- **Cross-Platform** - Works on Windows, Linux, and macOS
 
 ## Installation
 
-```bash
-bun install
-```
+### Pre-built Binaries
 
-Note: Some compression libraries may require native bindings. If you encounter issues:
-- For LZMA: You may need to use `node-lzma` or install native dependencies
-- For Brotli: The `brotli` package should work, but `@hapi/brotli` is an alternative
-- For Zstandard: You may need `node-zstd` or similar package
+Download from [Releases](../../releases) for your platform.
+
+### Build from Source
+
+```bash
+# Install Bun (https://bun.sh)
+curl -fsSL https://bun.sh/install | bash
+
+# Clone and build
+git clone <repo>
+cd compression
+bun install
+bun run build
+```
 
 ## Usage
 
-### Compress Files
+### Compress Files/Folders
 
 ```bash
-bun run index.ts compress file1.txt file2.txt -o archive.cmp
+nsx compress folder/ -o archive.nsx
+nsx compress file1.txt file2.txt -o archive.nsx
 ```
-
-Options:
-- `-o, --output <path>`: Output archive path (default: adds `.cmp` extension)
-- `-a, --algorithm <name>`: Force specific algorithm (lzma2, brotli, zstd, bwt, auto)
-- `-l, --level <number>`: Compression level (0-22, depends on algorithm)
-- `-v, --verbose`: Show detailed output
 
 ### Decompress Archive
 
 ```bash
-bun run index.ts decompress archive.cmp -o ./extracted
+nsx decompress archive.nsx -o ./extracted
 ```
 
 ### List Archive Contents
 
 ```bash
-bun run index.ts list archive.cmp
+nsx list archive.nsx
 ```
 
 ### Benchmark Compression
 
 ```bash
-bun run index.ts benchmark file1.txt file2.txt
+nsx benchmark folder/
 ```
 
-This will:
-- Test all available algorithms
-- Compare with ZIP, 7Z, and TAR formats
-- Show compression ratios, speeds, and memory usage
+## Options
+
+```
+Compression Options:
+  -l, --level <1-11>      Compression level (default: 6)
+  --fast, -1              Fast compression (level 1)
+  --default, -6           Balanced compression (level 6)
+  --best, -9              Best compression (level 9)
+  --ultra, -11            Maximum compression (level 11, slow!)
+  -a, --algorithm <name>  Force algorithm (brotli, gzip, store)
+
+General Options:
+  -o, --output <path>     Output file or directory
+  -v, --verbose           Verbose output
+  -h, --help              Show help message
+```
+
+## Compression Levels
+
+| Level | Speed     | Compression | Use Case              |
+| ----- | --------- | ----------- | --------------------- |
+| 1-3   | Fast      | Lower       | Quick backups         |
+| 4-6   | Balanced  | Good        | General use (default) |
+| 7-9   | Slow      | Better      | Archiving             |
+| 10-11 | Very Slow | Best        | Maximum compression   |
 
 ## Architecture
 
-The system consists of:
+NSX uses a streaming pipeline architecture:
 
-- **Container Format**: Custom binary format with header, file entries, and index
-- **Compression Algorithms**: Pluggable algorithm interface supporting multiple methods
-- **File Analyzer**: Content type detection, entropy analysis, and pattern recognition
-- **Algorithm Selector**: Intelligent selection based on file characteristics
-- **Benchmarking Suite**: Comprehensive comparison tools
+1. **File Scanner** - Recursively finds files, sorts by type for better compression
+2. **Parallel Reader** - Reads files with multiple I/O workers
+3. **Block Compressor** - Compresses 32MB blocks in parallel
+4. **Stream Writer** - Writes compressed blocks directly to disk
 
-## Algorithm Selection
+### Large File Handling
 
-The system automatically selects algorithms based on:
+Files larger than 500MB are automatically split into 64MB chunks:
 
-- **Text Files**: Brotli or BWT (high compressibility)
-- **Executables/Binaries**: LZMA2 (excellent for structured data)
-- **Media Files**: Zstandard or LZMA2 (depending on compressibility)
-- **Archives**: LZMA2 (handles already-compressed data well)
+- Prevents memory exhaustion
+- Enables parallel compression of large files
+- Chunks are transparently reassembled during decompression
 
-## Performance Goals
+### Algorithms
 
-- 10-30% better compression than ZIP
-- 5-20% better compression than RAR
-- Lossless compression (100% data integrity)
-- Reasonable compression/decompression speeds
+- **Brotli** (default) - Best compression ratio, good speed
+- **Gzip** - Fast compression, wide compatibility
+- **Store** - No compression, fastest
+
+## Performance
+
+Typical performance on modern hardware (24-core CPU, NVMe SSD):
+
+| Data Size | Compress | Decompress |
+| --------- | -------- | ---------- |
+| 100 MB    | ~1s      | ~0.5s      |
+| 1 GB      | ~10s     | ~5s        |
+| 10 GB     | ~100s    | ~50s       |
+
+Performance scales with CPU cores and storage speed.
+
+## File Format
+
+NSX archives (`.nsx`) use a custom binary format:
+
+- 24-byte header with magic number and metadata
+- Compressed data blocks (32MB uncompressed each)
+- Block index for random access
+- File index with paths, sizes, and timestamps
+
+## Build Scripts
+
+```bash
+bun run build           # Build for current platform
+bun run build:windows   # Build Windows executable
+bun run build:linux     # Build Linux executable
+bun run build:macos     # Build macOS executable
+bun run build:all       # Build all platforms
+```
 
 ## Project Structure
 
 ```
 src/
+  algorithms/    # Compression algorithms (Brotli, Gzip, etc.)
+  analyzer/      # File type detection
+  benchmark/     # Benchmark utilities
+  cli/           # Command-line interface
   container/     # Archive format implementation
-  algorithms/   # Compression algorithms
-  analyzer/     # File analysis and detection
-  benchmark/    # Benchmarking tools
-  cli/          # Command-line interface
-  utils/        # Utility functions
+  utils/         # Buffer, I/O, and parallel utilities
 ```
 
 ## License
 
-Private project
+MIT

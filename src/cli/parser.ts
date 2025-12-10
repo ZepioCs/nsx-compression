@@ -85,7 +85,7 @@ export class CliParser {
 
   static printHelp(): void {
     console.log(`
-Advanced Compression System (CMP Format)
+Advanced Compression System (NSX Format)
 
 Usage:
   compress <files...> [options]
@@ -115,13 +115,13 @@ General Options:
   -h, --help              Show this help message
 
 Examples:
-  compress folder/ -o archive.cmp              Default compression (level 6, solid)
-  compress folder/ --fast -o archive.cmp       Fast compression
-  compress folder/ --best -o archive.cmp       Best compression
-  compress folder/ --ultra -o archive.cmp      Maximum compression (very slow)
-  compress folder/ -l 9 --no-solid -o out.cmp  Level 9, per-file compression
-  decompress archive.cmp -o ./extracted        Extract archive
-  list archive.cmp                             List archive contents
+  compress folder/ -o archive.nsx              Default compression (level 6, solid)
+  compress folder/ --fast -o archive.nsx       Fast compression
+  compress folder/ --best -o archive.nsx       Best compression
+  compress folder/ --ultra -o archive.nsx      Maximum compression (very slow)
+  compress folder/ -l 9 --no-solid -o out.nsx  Level 9, per-file compression
+  decompress archive.nsx -o ./extracted        Extract archive
+  list archive.nsx                             List archive contents
 
 Compression Levels:
   1-3   Fast (quick compression, larger files)
