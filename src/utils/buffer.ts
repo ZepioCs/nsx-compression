@@ -16,9 +16,9 @@ export class BufferUtils {
     offset: number
   ): { value: number; offset: number } {
     const value =
-      (buffer[offset]! << 24) |
-      (buffer[offset + 1]! << 16) |
-      (buffer[offset + 2]! << 8) |
+      buffer[offset]! * 0x1000000 +
+      buffer[offset + 1]! * 0x10000 +
+      buffer[offset + 2]! * 0x100 +
       buffer[offset + 3]!;
     return { value, offset: offset + 4 };
   }
@@ -41,7 +41,9 @@ export class BufferUtils {
   ): { value: bigint; offset: number } {
     const high = this.readUint32(buffer, offset);
     const low = this.readUint32(buffer, high.offset);
-    const value = (BigInt(high.value) << 32n) | BigInt(low.value);
+    const highBig = BigInt(high.value >>> 0);
+    const lowBig = BigInt(low.value >>> 0);
+    const value = (highBig << 32n) | lowBig;
     return { value, offset: low.offset };
   }
 
