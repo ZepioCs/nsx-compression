@@ -739,11 +739,13 @@ export class StreamingArchive {
       current: number,
       total: number,
       extra?: string
-    ) => void
+    ) => void,
+    unsafe?: boolean
   ): Promise<{
     extracted: number;
     failed: number;
     chunkedReassembled: number;
+    skippedBlocks: number;
   }> {
     if (!this.archiveFilePath) {
       throw new Error("Archive not loaded");
@@ -754,7 +756,10 @@ export class StreamingArchive {
       (f) => f.chunks.length > 1
     ).length;
 
+    const maxBlockIndex = this.blockInfos.length - 1;
     const allNeededBlocks = new Set<number>();
+    const invalidBlocks = new Set<number>();
+
     for (const fileEntry of reassembledFiles) {
       for (const chunk of fileEntry.chunks) {
         if (chunk.size === 0) continue;
@@ -763,9 +768,21 @@ export class StreamingArchive {
           (chunk.offset + chunk.size - 1) / this.blockSize
         );
         for (let b = startBlock; b <= endBlock; b++) {
-          allNeededBlocks.add(b);
+          if (b > maxBlockIndex) {
+            invalidBlocks.add(b);
+          } else {
+            allNeededBlocks.add(b);
+          }
         }
       }
+    }
+
+    if (invalidBlocks.size > 0) {
+      const msg = `Warning: ${invalidBlocks.size} block(s) referenced but not in archive (max: ${maxBlockIndex})`;
+      if (!unsafe) {
+        throw new Error(`${msg}. Use --unsafe to extract available files.`);
+      }
+      console.error(msg);
     }
 
     const sortedBlocks = Array.from(allNeededBlocks).sort((a, b) => a - b);
@@ -888,7 +905,12 @@ export class StreamingArchive {
     this.decompressedBlocksMap.clear();
     blockDataMap.clear();
 
-    return { extracted, failed, chunkedReassembled: chunkedCount };
+    return {
+      extracted,
+      failed,
+      chunkedReassembled: chunkedCount,
+      skippedBlocks: invalidBlocks.size,
+    };
   }
 
   getFileInfos(): FileInfo[] {

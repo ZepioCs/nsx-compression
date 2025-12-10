@@ -6,6 +6,7 @@ export interface CliOptions {
   level?: number;
   verbose?: boolean;
   solid?: boolean;
+  unsafe?: boolean;
 }
 
 export class CliParser {
@@ -16,6 +17,7 @@ export class CliParser {
       verbose: false,
       solid: true,
       level: 6,
+      unsafe: false,
     };
 
     if (args.length === 0) {
@@ -68,6 +70,8 @@ export class CliParser {
         options.solid = true;
       } else if (arg === "--no-solid") {
         options.solid = false;
+      } else if (arg === "--unsafe") {
+        options.unsafe = true;
       } else if (arg === "-h" || arg === "--help") {
         this.printHelp();
         process.exit(0);
@@ -108,6 +112,9 @@ Compression Options:
   -s, --solid             Use solid compression (default, best ratio)
   --no-solid              Per-file compression (faster random access)
   -a, --algorithm <name>  Force algorithm (brotli, gzip, store)
+
+Decompression Options:
+  --unsafe                Continue extraction even with missing/corrupt blocks
 
 General Options:
   -o, --output <path>     Output file or directory

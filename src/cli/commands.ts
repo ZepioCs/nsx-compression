@@ -1099,7 +1099,8 @@ export class Commands {
             `Extracting files: ${current}/${total} (${percent}%) - ${elapsed}s`
           );
         }
-      }
+      },
+      options.unsafe
     );
 
     process.stdout.write("\x1b[K\n\n");
@@ -1114,6 +1115,11 @@ export class Commands {
     }
     if (result.failed > 0) {
       console.log(`  Failed: ${result.failed} files`);
+    }
+    if (result.skippedBlocks > 0) {
+      console.log(
+        `  Skipped blocks: ${result.skippedBlocks} (missing from archive)`
+      );
     }
     console.log(`  Output directory: ${outputDir}`);
     console.log(`  Time taken: ${totalTime}s`);
@@ -1455,7 +1461,12 @@ export class Commands {
           const decompressStart = Date.now();
           const readArchive = new StreamingArchive();
           await readArchive.read(outputPath);
-          await readArchive.streamingExtract(extractPath, algorithm, () => {});
+          await readArchive.streamingExtract(
+            extractPath,
+            algorithm,
+            () => {},
+            true
+          );
           const decompressTime = Date.now() - decompressStart;
 
           const ratio = (1 - compressedSize / totalOriginalSize) * 100;
