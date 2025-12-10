@@ -18,6 +18,9 @@ jobs:
           - os: ubuntu-latest
             target: bun-linux-x64
             output: nsx-linux-x64
+          - os: macos-latest
+            target: bun-darwin-arm64
+            output: nsx-macos-arm64
 
     runs-on: ${{ matrix.os }}
 
@@ -32,8 +35,8 @@ jobs:
       - name: Build
         run: bun build --compile --target=${{ matrix.target }} index.ts --outfile ${{ matrix.output }}
 
-      - name: Make executable (Linux)
-        if: runner.os == 'Linux'
+      - name: Make executable (Linux/macOS)
+        if: runner.os != 'Windows'
         run: chmod +x ${{ matrix.output }}
 
       - name: Upload artifact
