@@ -225,6 +225,13 @@ export class StreamingArchive {
     };
 
     const addFileToBlock = (result: ReadResult) => {
+      if (
+        currentBlockSize + result.data.length > this.blockSize &&
+        currentBlockSize > 0
+      ) {
+        flushBlock();
+      }
+
       this.fileInfos.push({
         path: result.path,
         size: result.data.length,
@@ -232,13 +239,6 @@ export class StreamingArchive {
         timestamp: result.timestamp,
       });
       globalOffset += result.data.length;
-
-      if (
-        currentBlockSize + result.data.length > this.blockSize &&
-        currentBlockSize > 0
-      ) {
-        flushBlock();
-      }
 
       currentBlockData.push(result.data);
       currentBlockSize += result.data.length;
