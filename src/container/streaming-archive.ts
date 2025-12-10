@@ -759,10 +759,23 @@ export class StreamingArchive {
     for (const fileEntry of reassembledFiles) {
       const blocks = new Set<number>();
       for (const chunk of fileEntry.chunks) {
+        if (chunk.size === 0) continue;
+        if (chunk.offset < 0) {
+          console.error(
+            `Warning: Negative offset for ${fileEntry.original}: offset=${chunk.offset}`
+          );
+          continue;
+        }
         const startBlock = Math.floor(chunk.offset / this.blockSize);
         const endOffset = chunk.offset + chunk.size;
-        const endBlock = Math.floor((endOffset - 1) / this.blockSize);
-        for (let b = startBlock; b <= endBlock; b++) {
+        const endBlock = Math.floor(
+          Math.max(0, endOffset - 1) / this.blockSize
+        );
+        for (
+          let b = startBlock;
+          b <= Math.min(endBlock, this.blockInfos.length - 1);
+          b++
+        ) {
           blocks.add(b);
         }
       }
@@ -820,31 +833,80 @@ export class StreamingArchive {
     }) => {
       try {
         const totalSize = fileEntry.chunks.reduce((sum, c) => sum + c.size, 0);
+
+        if (totalSize === 0) {
+          const filePath = join(outputDir, fileEntry.original);
+          const dirPath = dirname(filePath);
+          await mkdir(dirPath, { recursive: true });
+          await writeFileBuffer(filePath, new Uint8Array(0));
+          extracted++;
+          return;
+        }
+
         const fileData = new Uint8Array(totalSize);
         let writeOffset = 0;
 
         for (const chunk of fileEntry.chunks) {
+          if (chunk.size === 0) {
+            continue;
+          }
+
           const startBlock = Math.floor(chunk.offset / this.blockSize);
           const endOffset = chunk.offset + chunk.size;
-          const endBlock = Math.floor((endOffset - 1) / this.blockSize);
+          const endBlock = Math.floor(
+            Math.max(0, endOffset - 1) / this.blockSize
+          );
 
-          let chunkOffset = 0;
-          for (let b = startBlock; b <= endBlock; b++) {
-            const blockData = blockDataMap.get(b)!;
+          let chunkBytesWritten = 0;
+          for (
+            let b = startBlock;
+            b <= endBlock && chunkBytesWritten < chunk.size;
+            b++
+          ) {
+            const blockData = blockDataMap.get(b);
+            if (!blockData) {
+              throw new Error(
+                `Block ${b} not found for file ${fileEntry.original}`
+              );
+            }
+
             const blockStartOffset = b * this.blockSize;
+            const blockEndOffset = blockStartOffset + blockData.length;
 
-            const readStart = Math.max(0, chunk.offset - blockStartOffset);
+            const chunkStartInStream = chunk.offset + chunkBytesWritten;
+            const chunkEndInStream = chunk.offset + chunk.size;
+
+            if (
+              chunkStartInStream >= blockEndOffset ||
+              chunkEndInStream <= blockStartOffset
+            ) {
+              continue;
+            }
+
+            const readStart = Math.max(
+              0,
+              chunkStartInStream - blockStartOffset
+            );
             const readEnd = Math.min(
               blockData.length,
-              chunk.offset + chunk.size - blockStartOffset
+              chunkEndInStream - blockStartOffset
             );
 
+            if (readEnd <= readStart) {
+              continue;
+            }
+
             const bytesToCopy = readEnd - readStart;
-            fileData.set(
-              blockData.subarray(readStart, readEnd),
-              writeOffset + chunkOffset
-            );
-            chunkOffset += bytesToCopy;
+            const destOffset = writeOffset + chunkBytesWritten;
+
+            if (destOffset + bytesToCopy > fileData.length) {
+              throw new Error(
+                `Write overflow: destOffset=${destOffset}, bytesToCopy=${bytesToCopy}, fileData.length=${fileData.length}`
+              );
+            }
+
+            fileData.set(blockData.subarray(readStart, readEnd), destOffset);
+            chunkBytesWritten += bytesToCopy;
           }
           writeOffset += chunk.size;
         }
