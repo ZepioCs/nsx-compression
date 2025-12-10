@@ -148,7 +148,6 @@ export class StreamingArchive {
     const pendingData: ReadResult[] = [];
     let currentBlockData: Uint8Array[] = [];
     let currentBlockSize = 0;
-    let globalOffset = 0;
 
     const blocksToCompress: {
       index: number;
@@ -160,6 +159,7 @@ export class StreamingArchive {
       { compressed: Uint8Array; uncompressedSize: number }
     >();
     let nextBlockIndex = 0;
+    let currentBlockOffset = 0;
     let compressionDone = false;
 
     const timings = {
@@ -219,6 +219,7 @@ export class StreamingArchive {
         uncompressedSize: currentBlockSize,
       });
       nextBlockIndex++;
+      currentBlockOffset = 0;
 
       currentBlockData = [];
       currentBlockSize = 0;
@@ -232,16 +233,17 @@ export class StreamingArchive {
         flushBlock();
       }
 
+      const fileOffset = nextBlockIndex * this.blockSize + currentBlockOffset;
       this.fileInfos.push({
         path: result.path,
         size: result.data.length,
-        offset: globalOffset,
+        offset: fileOffset,
         timestamp: result.timestamp,
       });
-      globalOffset += result.data.length;
 
       currentBlockData.push(result.data);
       currentBlockSize += result.data.length;
+      currentBlockOffset += result.data.length;
 
       if (currentBlockSize >= this.blockSize) {
         flushBlock();
