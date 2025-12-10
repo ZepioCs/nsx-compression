@@ -149,4 +149,6 @@ src/
 
 ## License
 
-MIT
+MIT License - see [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2025 ZepioCs
